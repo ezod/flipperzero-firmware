@@ -48,6 +48,7 @@ extern int32_t text_box_test_app(void* p);
 // Plugins
 extern int32_t music_player_app(void* p);
 extern int32_t snake_game_app(void* p);
+extern int32_t midi_tool_app(void* p);
 
 // On system start hooks declaration
 extern void bt_on_system_start();
@@ -345,6 +346,14 @@ const FlipperApplication FLIPPER_PLUGINS[] = {
 #ifdef APP_SNAKE_GAME
     {.app = snake_game_app,
      .name = "Snake Game",
+     .stack_size = 1024,
+     .icon = &A_Plugins_14,
+     .flags = FlipperApplicationFlagDefault},
+#endif
+
+#ifdef APP_MIDI_TOOL
+    {.app = midi_tool_app,
+     .name = "MIDI Tool",
      .stack_size = 1024,
      .icon = &A_Plugins_14,
      .flags = FlipperApplicationFlagDefault},
