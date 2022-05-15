@@ -2,7 +2,7 @@
 
 int32_t MidiApp::run(void* args)
 {
-	UNUSED(args);
+  UNUSED(args);
 
-	return 0;
+  return 0;
 }
