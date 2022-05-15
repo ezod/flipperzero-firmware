@@ -2,8 +2,8 @@
 
 #include <furi.h>
 
-/** Main MIDI Tool application class. */
-class MidiToolApp {
+/** Main MIDI application class. */
+class MidiApp {
 public:
 
 	/** Run application.
