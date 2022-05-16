@@ -12,13 +12,7 @@ public:
     Exit,
     Back,
     MenuSelected,
-    MenuSelectedPress,
-    MenuSelectedRelease,
     DialogExSelected,
-    InfraredMessageReceived,
-    TextEditDone,
-    PopupTimer,
-    ButtonPanelPressed,
   };
 
   union
