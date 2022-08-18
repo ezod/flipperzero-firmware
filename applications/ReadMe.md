@@ -12,6 +12,7 @@
 - `dialogs`             - Dialogs service: GUI Dialogs for your app
 - `dolphin`             - Dolphin service and supplementary apps
 - `gpio`                - GPIO application: includes USART bridge and GPIO control
+- `gps`                 - GPS application for USART GPS module
 - `gui`                 - GUI service and API
 - `ibutton`             - iButton application, onewire keys and more
 - `input`               - Input service
