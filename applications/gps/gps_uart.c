@@ -2,6 +2,7 @@
 #include <stream_buffer.h>
 #include <string.h>
 
+#include "minmea.h"
 #include "gps_uart.h"
 
 #define RX_BUF_SIZE 1024
@@ -18,6 +19,8 @@ struct GpsUart {
     FuriThread* thread;
     StreamBufferHandle_t rx_stream;
     uint8_t rx_buf[RX_BUF_SIZE];
+
+    GpsStatus status;
 };
 
 static void gps_uart_on_irq_cb(UartIrqEvent ev, uint8_t data, void* context) {
@@ -49,6 +52,21 @@ static void gps_uart_serial_deinit(GpsUart* gps_uart, uint8_t uart_ch) {
         furi_hal_uart_deinit(uart_ch);
 }
 
+static void gps_uart_parse_nmea(GpsUart* gps_uart, char* line)
+{
+    switch(minmea_sentence_id(line, false)) {
+        case MINMEA_SENTENCE_RMC: {
+            struct minmea_sentence_rmc frame;
+            if (minmea_parse_rmc(&frame, line)) {
+                gps_uart->status.latitude = minmea_tocoord(&frame.latitude);
+                gps_uart->status.longitude = minmea_tocoord(&frame.longitude);
+            }
+        } break;
+
+        default: break;
+    }
+}
+
 static int32_t gps_uart_worker(void* context) {
     GpsUart* gps_uart = (GpsUart*)context;
 
@@ -75,7 +93,7 @@ static int32_t gps_uart_worker(void* context) {
                     char * newline = strchr(line_current, '\n');
                     if(newline) {
                         *newline = '\0';
-                        // TODO: parse line_current and update status
+                        gps_uart_parse_nmea(gps_uart, line_current);
                         line_current = newline + 1;
                     } else {
                         if(line_current > (char *)gps_uart->rx_buf) {

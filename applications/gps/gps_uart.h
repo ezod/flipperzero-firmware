@@ -4,6 +4,11 @@
 
 typedef struct GpsUart GpsUart;
 
+typedef struct {
+    float latitude;
+    float longitude;
+} GpsStatus;
+
 GpsUart* gps_uart_enable();
 
 void gps_uart_disable(GpsUart* gps_uart);
