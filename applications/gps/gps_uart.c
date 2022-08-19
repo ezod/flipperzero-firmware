@@ -1,11 +1,7 @@
-#include <furi_hal.h>
-#include <stream_buffer.h>
 #include <string.h>
 
 #include "minmea.h"
 #include "gps_uart.h"
-
-#define RX_BUF_SIZE 1024
 
 typedef enum {
     WorkerEvtStop = (1 << 0),
@@ -14,14 +10,6 @@ typedef enum {
 
 #define WORKER_ALL_RX_EVENTS                                                      \
     (WorkerEvtStop | WorkerEvtRxDone)
-
-struct GpsUart {
-    FuriThread* thread;
-    StreamBufferHandle_t rx_stream;
-    uint8_t rx_buf[RX_BUF_SIZE];
-
-    GpsStatus status;
-};
 
 static void gps_uart_on_irq_cb(UartIrqEvent ev, uint8_t data, void* context) {
     GpsUart* gps_uart = (GpsUart*)context;
@@ -34,22 +22,16 @@ static void gps_uart_on_irq_cb(UartIrqEvent ev, uint8_t data, void* context) {
     }
 }
 
-static void gps_uart_serial_init(GpsUart* gps_uart, uint8_t uart_ch) {
-    if(uart_ch == FuriHalUartIdUSART1) {
-        furi_hal_console_disable();
-    } else if(uart_ch == FuriHalUartIdLPUART1) {
-        furi_hal_uart_init(uart_ch, GPS_BAUD_RATE);
-    }
-    furi_hal_uart_set_irq_cb(uart_ch, gps_uart_on_irq_cb, gps_uart);
+static void gps_uart_serial_init(GpsUart* gps_uart) {
+    furi_hal_console_disable();
+    furi_hal_uart_set_irq_cb(FuriHalUartIdUSART1, gps_uart_on_irq_cb, gps_uart);
+    furi_hal_uart_set_br(FuriHalUartIdUSART1, GPS_BAUDRATE);
 }
 
-static void gps_uart_serial_deinit(GpsUart* gps_uart, uint8_t uart_ch) {
+static void gps_uart_serial_deinit(GpsUart* gps_uart) {
     UNUSED(gps_uart);
-    furi_hal_uart_set_irq_cb(uart_ch, NULL, NULL);
-    if(uart_ch == FuriHalUartIdUSART1)
-        furi_hal_console_enable();
-    else if(uart_ch == FuriHalUartIdLPUART1)
-        furi_hal_uart_deinit(uart_ch);
+    furi_hal_uart_set_irq_cb(FuriHalUartIdUSART1, NULL, NULL);
+    furi_hal_console_enable();
 }
 
 static void gps_uart_parse_nmea(GpsUart* gps_uart, char* line)
@@ -73,7 +55,7 @@ static int32_t gps_uart_worker(void* context) {
     gps_uart->rx_stream = xStreamBufferCreate(RX_BUF_SIZE * 5, 1);
     size_t rx_offset = 0;
 
-    gps_uart_serial_init(gps_uart, FuriHalUartIdUSART1);
+    gps_uart_serial_init(gps_uart);
 
     while(1) {
         uint32_t events =
@@ -81,35 +63,39 @@ static int32_t gps_uart_worker(void* context) {
         furi_check((events & FuriFlagError) == 0);
         if(events & WorkerEvtStop) break;
         if(events & WorkerEvtRxDone) {
-            size_t len =
-                xStreamBufferReceive(gps_uart->rx_stream, gps_uart->rx_buf + rx_offset,
-                                     RX_BUF_SIZE - 1 - rx_offset, 0);
-            if(len > 0) {
-                rx_offset += len;
-                *(gps_uart->rx_buf + rx_offset) = '\0';
+            size_t len = 0;
+            do {
+                len = xStreamBufferReceive(gps_uart->rx_stream, gps_uart->rx_buf + rx_offset,
+                                           RX_BUF_SIZE - 1 - rx_offset, 0);
+                if(len > 0) {
+                    rx_offset += len;
+                    gps_uart->rx_buf[rx_offset] = '\0';
 
-                char * line_current = (char *)gps_uart->rx_buf;
-                while(1) {
-                    char * newline = strchr(line_current, '\n');
-                    if(newline) {
-                        *newline = '\0';
-                        gps_uart_parse_nmea(gps_uart, line_current);
-                        line_current = newline + 1;
-                    } else {
-                        if(line_current > (char *)gps_uart->rx_buf) {
-                            rx_offset = 0;
-                            while(*line_current) {
-                                gps_uart->rx_buf[rx_offset++] = *(line_current++);
+                    char * line_current = (char *)gps_uart->rx_buf;
+                    while(1) {
+                        while (*line_current == '\0' && line_current < (char *)gps_uart->rx_buf + rx_offset - 1)
+                            line_current++;
+                        char * newline = strchr(line_current, '\n');
+                        if(newline) {
+                            *newline = '\0';
+                            gps_uart_parse_nmea(gps_uart, line_current);
+                            line_current = newline + 1;
+                        } else {
+                            if(line_current > (char *)gps_uart->rx_buf) {
+                                rx_offset = 0;
+                                while(*line_current) {
+                                    gps_uart->rx_buf[rx_offset++] = *(line_current++);
+                                }
                             }
+                            break;
                         }
-                        break;
                     }
                 }
-            }
+            } while(len > 0);
         }
     }
 
-    gps_uart_serial_deinit(gps_uart, FuriHalUartIdUSART1);
+    gps_uart_serial_deinit(gps_uart);
 
     vStreamBufferDelete(gps_uart->rx_stream);
 
@@ -118,6 +104,9 @@ static int32_t gps_uart_worker(void* context) {
 
 GpsUart* gps_uart_enable() {
     GpsUart* gps_uart = malloc(sizeof(GpsUart));
+
+    gps_uart->status.latitude = 0.0;
+    gps_uart->status.longitude = 0.0;
 
     gps_uart->thread = furi_thread_alloc();
     furi_thread_set_name(gps_uart->thread, "GpsUartWorker");
