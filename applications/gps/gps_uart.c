@@ -1,9 +1,10 @@
 #include <furi_hal.h>
 #include <stream_buffer.h>
+#include <string.h>
 
 #include "gps_uart.h"
 
-#define RX_BUF_SIZE 0
+#define RX_BUF_SIZE 1024
 
 typedef enum {
     WorkerEvtStop = (1 << 0),
@@ -49,11 +50,12 @@ static void gps_uart_serial_deinit(GpsUart* gps_uart, uint8_t uart_ch) {
 }
 
 static int32_t gps_uart_worker(void* context) {
-	GpsUart* gps_uart = (GpsUart*)context;
+    GpsUart* gps_uart = (GpsUart*)context;
 
-	gps_uart->rx_stream = xStreamBufferCreate(RX_BUF_SIZE * 5, 1);
+    gps_uart->rx_stream = xStreamBufferCreate(RX_BUF_SIZE * 5, 1);
+    size_t rx_offset = 0;
 
-	gps_uart_serial_init(gps_uart, FuriHalUartIdUSART1);
+    gps_uart_serial_init(gps_uart, FuriHalUartIdUSART1);
 
     while(1) {
         uint32_t events =
@@ -62,10 +64,29 @@ static int32_t gps_uart_worker(void* context) {
         if(events & WorkerEvtStop) break;
         if(events & WorkerEvtRxDone) {
             size_t len =
-                xStreamBufferReceive(gps_uart->rx_stream, gps_uart->rx_buf, RX_BUF_SIZE, 0);
+                xStreamBufferReceive(gps_uart->rx_stream, gps_uart->rx_buf + rx_offset,
+                                     RX_BUF_SIZE - 1 - rx_offset, 0);
             if(len > 0) {
-            	// TODO: send data to callback for NMEA processing & display
-        		xStreamBufferReset(gps_uart->rx_stream);
+                rx_offset += len;
+                *(gps_uart->rx_buf + rx_offset) = '\0';
+
+                char * line_current = (char *)gps_uart->rx_buf;
+                while(1) {
+                    char * newline = strchr(line_current, '\n');
+                    if(newline) {
+                        *newline = '\0';
+                        // TODO: parse line_current and update status
+                        line_current = newline + 1;
+                    } else {
+                        if(line_current > (char *)gps_uart->rx_buf) {
+                            rx_offset = 0;
+                            while(*line_current) {
+                                gps_uart->rx_buf[rx_offset++] = *(line_current++);
+                            }
+                        }
+                        break;
+                    }
+                }
             }
         }
     }
@@ -74,7 +95,7 @@ static int32_t gps_uart_worker(void* context) {
 
     vStreamBufferDelete(gps_uart->rx_stream);
 
-	return 0;
+    return 0;
 }
 
 GpsUart* gps_uart_enable() {
